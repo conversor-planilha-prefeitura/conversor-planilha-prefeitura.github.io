@@ -54,10 +54,11 @@
   <section id="painel" hidden>
     <div class="top">
       <div class="filtros" id="filtros">
-        <button type="button" data-f="pendente" class="on">Pendentes</button>
+        <button type="button" data-f="" class="on">Todos</button>
+        <button type="button" data-f="suspeito">Possíveis repetidos</button>
+        <button type="button" data-f="pendente">Pendentes</button>
         <button type="button" data-f="aprovado">Aprovados</button>
         <button type="button" data-f="recusado">Recusados</button>
-        <button type="button" data-f="">Todos</button>
       </div>
       <button type="button" id="sair">Sair</button>
     </div>
@@ -71,15 +72,33 @@
   "use strict";
   const sb = supabase.createClient("https://jjuptqerhlcjyaizmiph.supabase.co", "sb_publishable_8ovdggHUEcdNITwmcbSs7Q_VddrdQjY");
   const $ = id => document.getElementById(id);
-  let filtro = "pendente";
+  let filtro = "";
 
   function data(s){ const d = new Date(s); return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }
 
   async function carregar(){
     $("msgPainel").textContent = "";
-    let q = sb.from("acessos").select("*").order("criado_em", { ascending:false });
-    if(filtro) q = q.eq("status", filtro);
-    const { data: rows, error } = await q;
+    const { data: todos, error } = await sb.from("acessos").select("*").order("criado_em", { ascending:false });
+    // Mesmo navegador, mesmo resumo de navegador ou mesmo IP em contas diferentes.
+    const grupos = {};
+    for(const r of (todos || [])){
+      for(const [tipo, v] of [["navegador", r.dispositivo], ["aparelho parecido", r.impressao], ["IP", r.ip_cadastro], ["IP", r.ip_ultimo]]){
+        if(!v) continue;
+        (grupos[tipo + "|" + v] = grupos[tipo + "|" + v] || new Set()).add(r);
+      }
+    }
+    const alertas = new Map();
+    for(const [k, set] of Object.entries(grupos)){
+      if(set.size < 2) continue;
+      const tipo = k.split("|")[0];
+      for(const r of set){
+        const outros = [...set].filter(o => o !== r).map(o => o.email);
+        if(!alertas.has(r)) alertas.set(r, new Map());
+        const m = alertas.get(r);
+        m.set(tipo, new Set([...(m.get(tipo) || []), ...outros]));
+      }
+    }
+    const rows = (todos || []).filter(r => !filtro || (filtro === "suspeito" ? alertas.has(r) : r.status === filtro));
     const lista = $("lista"); lista.innerHTML = "";
     if(error){ $("msgPainel").textContent = error.message; return; }
     if(!rows.length){ const p = document.createElement("p"); p.className="vazio"; p.textContent = "Nada por aqui."; lista.appendChild(p); return; }
@@ -89,6 +108,19 @@
       const b = document.createElement("b"); b.textContent = r.nome || "(sem nome)";
       const s = document.createElement("span"); s.textContent = r.email + (r.empresa ? " · " + r.empresa : "") + " · pediu em " + data(r.criado_em);
       quem.append(b, s);
+      if(r.ip_cadastro || r.ip_ultimo){
+        const ip = document.createElement("span");
+        ip.textContent = "IP: " + (r.ip_cadastro || "-") + (r.ip_ultimo && r.ip_ultimo !== r.ip_cadastro ? " (último: " + r.ip_ultimo + ")" : "");
+        quem.appendChild(ip);
+      }
+      if(r.sem_teste){ const t = document.createElement("span"); t.textContent = "Sem teste grátis: navegador já usado por outra conta"; t.style.color = "var(--warn)"; quem.appendChild(t); }
+      if(alertas.has(r)){
+        for(const [tipo, emails] of alertas.get(r)){
+          const a = document.createElement("span"); a.style.color = "var(--warn)";
+          a.textContent = "⚠ " + ({ "navegador": "Mesmo navegador que", "aparelho parecido": "Aparelho parecido com", "IP": "Mesmo IP que" })[tipo] + ": " + [...emails].join(", ");
+          quem.appendChild(a);
+        }
+      }
       if(r.status === "aprovado"){
         const v = document.createElement("span"); v.style.display = "block";
         const ate = r.valido_ate ? new Date(r.valido_ate) : null;
