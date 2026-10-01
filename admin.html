@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Conversor NFS-e · Aprovações</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.2/dist/umd/supabase.js"></script>
+<style>
+  html{color-scheme:light dark;}
+  :root{--bg:#fff;--surface:#fff;--surface-2:#f5ecec;--ink:#231416;--dim:#6e5457;--accent:#c1272d;--accent-strong:#921e23;--accent-ink:#fff;--line:#e6d4d5;--warn:#a1481c;--ok:#2e7d4f;}
+  @media (prefers-color-scheme: dark){:root{--bg:#0a0a0a;--surface:#161010;--surface-2:#201717;--ink:#f2e8e8;--dim:#ab8f8f;--accent:#ff5757;--accent-strong:#e63b3b;--accent-ink:#1a0505;--line:#332222;--warn:#e2915c;--ok:#6fcf97;}}
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}
+  .wrap{max-width:860px;margin:0 auto;padding:36px 16px 72px;}
+  .eyebrow{font:12px ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 8px;}
+  h1{font-size:24px;margin:0 0 18px;}
+  .card{max-width:380px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;}
+  label{display:block;font-size:12.5px;color:var(--dim);margin:0 0 4px;}
+  input{width:100%;font-size:16px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);margin-bottom:12px;}
+  button{font-size:13.5px;font-weight:600;padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink);cursor:pointer;}
+  button.pri{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+  button:disabled{opacity:.5;cursor:wait;}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+  .filtros{display:flex;gap:6px;flex-wrap:wrap;}
+  .filtros button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);}
+  .lista{display:flex;flex-direction:column;gap:10px;}
+  .quem span{display:block;}
+  .item{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px 16px;display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap;}
+  .quem b{display:block;font-size:15px;}
+  .quem span{font-size:13px;color:var(--dim);}
+  .acoes{display:flex;gap:6px;align-items:center;}
+  .tag{font:11px ui-monospace,monospace;text-transform:uppercase;letter-spacing:.06em;padding:3px 7px;border-radius:5px;border:1px solid var(--line);}
+  .tag.pendente{color:var(--warn);} .tag.aprovado{color:var(--ok);} .tag.recusado{color:var(--dim);}
+  .vazio,.msg{font-size:14px;color:var(--dim);}
+  .msg{color:var(--warn);margin-top:10px;}
+  [hidden]{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Conversor NFS-e</div>
+  <h1>Aprovação de clientes</h1>
+
+  <form class="card" id="login" hidden>
+    <label for="email">E-mail do administrador</label>
+    <input id="email" type="email" autocomplete="email" required>
+    <label for="senha">Senha</label>
+    <input id="senha" type="password" autocomplete="current-password" required>
+    <button class="pri" style="width:100%;padding:11px">Entrar</button>
+    <div class="msg" id="msgLogin"></div>
+  </form>
+
+  <section id="painel" hidden>
+    <div class="top">
+      <div class="filtros" id="filtros">
+        <button type="button" data-f="pendente" class="on">Pendentes</button>
+        <button type="button" data-f="aprovado">Aprovados</button>
+        <button type="button" data-f="recusado">Recusados</button>
+        <button type="button" data-f="">Todos</button>
+      </div>
+      <button type="button" id="sair">Sair</button>
+    </div>
+    <div class="lista" id="lista"></div>
+    <div class="msg" id="msgPainel"></div>
+  </section>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const sb = supabase.createClient("https://jjuptqerhlcjyaizmiph.supabase.co", "sb_publishable_8ovdggHUEcdNITwmcbSs7Q_VddrdQjY");
+  const $ = id => document.getElementById(id);
+  let filtro = "pendente";
+
+  function data(s){ const d = new Date(s); return d.toLocaleDateString("pt-BR") + " " + d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}); }
+
+  async function carregar(){
+    $("msgPainel").textContent = "";
+    let q = sb.from("acessos").select("*").order("criado_em", { ascending:false });
+    if(filtro) q = q.eq("status", filtro);
+    const { data: rows, error } = await q;
+    const lista = $("lista"); lista.innerHTML = "";
+    if(error){ $("msgPainel").textContent = error.message; return; }
+    if(!rows.length){ const p = document.createElement("p"); p.className="vazio"; p.textContent = "Nada por aqui."; lista.appendChild(p); return; }
+    for(const r of rows){
+      const it = document.createElement("div"); it.className = "item";
+      const quem = document.createElement("div"); quem.className = "quem";
+      const b = document.createElement("b"); b.textContent = r.nome || "(sem nome)";
+      const s = document.createElement("span"); s.textContent = r.email + (r.empresa ? " · " + r.empresa : "") + " · pediu em " + data(r.criado_em);
+      quem.append(b, s);
+      if(r.status === "aprovado"){
+        const v = document.createElement("span"); v.style.display = "block";
+        const ate = r.valido_ate ? new Date(r.valido_ate) : null;
+        v.textContent = ate ? (ate > new Date() ? "Acesso até " + data(r.valido_ate) : "Venceu em " + data(r.valido_ate)) : "Teste ainda não iniciado";
+        if(!ate || ate <= new Date()) v.style.color = "var(--warn)";
+        quem.appendChild(v);
+      }
+      const acoes = document.createElement("div"); acoes.className = "acoes";
+      const tag = document.createElement("span"); tag.className = "tag " + r.status; tag.textContent = r.status;
+      acoes.appendChild(tag);
+      if(r.status !== "aprovado") acoes.appendChild(botao("Aprovar", "pri", () => decidir(r.user_id, "aprovado")));
+      if(r.status !== "recusado") acoes.appendChild(botao(r.status === "aprovado" ? "Bloquear" : "Recusar", "", () => decidir(r.user_id, "recusado")));
+      if(r.status === "aprovado") acoes.appendChild(botao("+30 dias", "", () => estender(r)));
+      it.append(quem, acoes);
+      lista.appendChild(it);
+    }
+  }
+  function botao(txt, cls, fn){ const b = document.createElement("button"); b.type="button"; b.textContent = txt; if(cls) b.className = cls; b.onclick = async () => { b.disabled = true; await fn(); }; return b; }
+
+  async function decidir(id, status){
+    const { data: rows, error } = await sb.from("acessos").update({ status, decidido_em: new Date().toISOString() }).eq("user_id", id).select();
+    if(error || !rows || !rows.length){ $("msgPainel").textContent = error ? error.message : "Sem permissão: este e-mail não é o do administrador."; }
+    carregar();
+  }
+
+  // Para quem pagou por fora (dinheiro, transferência): soma dias a partir de hoje ou do vencimento.
+  async function estender(r){
+    if(!confirm("Somar 30 dias ao acesso de " + (r.nome || r.email) + "?")) { carregar(); return; }
+    const base = r.valido_ate && new Date(r.valido_ate) > new Date() ? new Date(r.valido_ate) : new Date();
+    base.setDate(base.getDate() + 30);
+    const { data: rows, error } = await sb.from("acessos").update({ valido_ate: base.toISOString() }).eq("user_id", r.user_id).select();
+    if(error || !rows || !rows.length) $("msgPainel").textContent = error ? error.message : "Sem permissão.";
+    carregar();
+  }
+
+  async function iniciar(){
+    const { data: { session } } = await sb.auth.getSession();
+    $("login").hidden = !!session; $("painel").hidden = !session;
+    if(session) carregar();
+  }
+
+  $("login").addEventListener("submit", async e => {
+    e.preventDefault();
+    const { error } = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("senha").value });
+    $("msgLogin").textContent = error ? "E-mail ou senha incorretos." : "";
+    if(!error) iniciar();
+  });
+  $("filtros").addEventListener("click", e => {
+    const b = e.target.closest("button"); if(!b) return;
+    filtro = b.dataset.f;
+    for(const x of $("filtros").children) x.classList.toggle("on", x === b);
+    carregar();
+  });
+  $("sair").onclick = async () => { await sb.auth.signOut(); iniciar(); };
+  iniciar();
+})();
+</script>
+</body>
+</html>
